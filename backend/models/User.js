@@ -1,4 +1,4 @@
-import mongoose from 'mongoose'
+import mongoose from "mongoose";
 
 const userSchema = new mongoose.Schema(
   {
@@ -13,16 +13,21 @@ const userSchema = new mongoose.Schema(
       required: true,
       lowercase: true,
       trim: true,
-    }, 
+    },
     phone: {
       type: String,
       required: true,
       unique: true,
-      match: /^[0-9]{10}$/,
+      trim: true,
+      match: [
+        /^(\+234|0)[789][01]\d{8}$/,
+        "Please provide a valid phone number",
+      ],
     },
     password: {
       type: String,
       required: true,
+      select: false,
     },
     role: {
       type: String,
@@ -36,18 +41,27 @@ const userSchema = new mongoose.Schema(
     verifyOtp: {
       type: String,
       default: null,
+      select: false,
     },
     verifyOtpExpire: {
       type: Date,
       default: null,
+      select: false,
     },
     resetOtp: {
       type: String,
       default: null,
+      select: false,
     },
     resetOtpExpire: {
       type: Date,
       default: null,
+      select: false,
     },
-  }, { timestamps: true }
-)
+  },
+  { timestamps: true }
+);
+
+const User = mongoose.model("User", userSchema);
+
+export default User;
