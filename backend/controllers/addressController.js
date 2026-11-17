@@ -1,0 +1,82 @@
+import Address from "../models/Address.js";
+
+const handle = (fn) => async (req, res) => {
+  try {
+    await fn(req, res)
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    })
+  }
+};
+
+// TO ADD A AADDRESS
+export const addAddress = handle(async (req, res) => {
+  const address = await Address.create({
+    user: req.user._id,
+    ...req.body
+  });
+
+  res.status(201).json({
+    success: true,
+    message: "Address Added Successfully",
+    address,
+  });
+});
+
+// TO GET A ADDRESS
+export const getAddress = handle(async (req, res) => {
+  const addresses = await Address.create({ user: req.user._id }).sort({
+    createdAt: -1
+  });
+
+  res.status(200).json({
+    success: true,
+    count: addresses.length,
+    addresses,
+  });
+});
+
+// TO UPDATE A ADDRESS
+export const updateAddress = handle(async (req, res) => {
+  const address = await Address.findByIdAndUpdate(
+    {_id: req.params.id, user: req.user._id},
+    req.body,
+    { returnDocument: "after" },
+  );
+
+  if (!address) {
+    return res.status(404).json({
+      success: false,
+      message: "Address Not Found",
+    });
+  };
+
+  res.status(200).json({
+    success: true,
+    message: "Address Updated Successfully",
+    address,
+  });
+}); 
+
+// TO DELETE A ADDRESS
+export const deleteAddress = handle(async (req, res) => {
+  const address = await Address.findByIdAndDelete(
+    {_id: req.params.id, user: req.user._id}
+  );
+
+  if (!address) {
+    return res.status(404).json({
+      success: false,
+      message: "Address Not Found",
+    });
+  };
+
+  res.status(200).json({
+    success: true,
+    message: "Address Deleted Successfully",
+    address,
+  });
+}); 
+

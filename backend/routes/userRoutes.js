@@ -1,4 +1,4 @@
-import express from express;
+import express from 'express'
 import {
   registerUser,
   verifyEmail,
@@ -20,4 +20,4 @@ userRouter.post('/forgot-Password', forgotPassword);
 userRouter.post('/reset-password', resetPassword);
 userRouter.get('/profile', authMiddleware, getProfile);
 
-export default userRouter
+export default userRouter;
