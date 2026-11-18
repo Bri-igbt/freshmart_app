@@ -5,7 +5,10 @@ import generateOTP from "../utils/generateOTP.js";
 import { sendVerificationOTP, sendResetOTP } from "../utils/sendEmail.js";
 
 const OTP_EXPIRY_MS = 10 * 60 * 1000;
+const RESEND_COOLDOWN_MS = 60 * 1000;
+const MAX_OTP_ATTEMPTS = 5;
 const MIN_PASSWORD_LENGTH = 8;
+const MAX_PASSWORD_BYTES = 72; // bcrypt ignores anything past 72 bytes
 
 const handle = (fn) => async (req, res) => {
   try {
@@ -37,29 +40,59 @@ const handle = (fn) => async (req, res) => {
   }
 };
 
+const isString = (value) => typeof value === "string";
+
 const normalizeEmail = (email) => String(email).toLowerCase().trim();
+
+const normalizePhone = (phone) =>
+  String(phone)
+    .replace(/[\s-]/g, "")
+    .replace(/^(\+234|234)/, "0");
+
+const getPasswordError = (password) => {
+  if (!isString(password) || password.length < MIN_PASSWORD_LENGTH) {
+    return `Password must be at least ${MIN_PASSWORD_LENGTH} characters`;
+  }
+  if (Buffer.byteLength(password, "utf8") > MAX_PASSWORD_BYTES) {
+    return "Password is too long";
+  }
+  return null;
+};
+
+const onCooldown = (expiresAt) =>
+  Boolean(expiresAt) &&
+  expiresAt.getTime() - OTP_EXPIRY_MS + RESEND_COOLDOWN_MS > Date.now();
 
 // TO REGISTER USER
 export const registerUser = handle(async (req, res) => {
-  const { name, phone, password } = req.body;
-  if (!name || !req.body.email || !phone || !password) {
+  const { name, email: rawEmail, phone: rawPhone, password } = req.body;
+  if (!name || !rawEmail || !rawPhone || !password) {
     return res.status(400).json({
       success: false,
       message: "All fields are required",
     });
   }
 
-  if (password.length < MIN_PASSWORD_LENGTH) {
+  if (!isString(name) || !isString(rawEmail)) {
     return res.status(400).json({
       success: false,
-      message: `Password must be at least ${MIN_PASSWORD_LENGTH} characters`,
+      message: "Invalid name or email",
     });
   }
 
-  const email = normalizeEmail(req.body.email);
+  const passwordError = getPasswordError(password);
+  if (passwordError) {
+    return res.status(400).json({
+      success: false,
+      message: passwordError,
+    });
+  }
+
+  const email = normalizeEmail(rawEmail);
+  const phone = normalizePhone(rawPhone);
 
   const existingUser = await User.findOne({
-    $or: [{ email }, { phone: String(phone).trim() }],
+    $or: [{ email }, { phone }],
   });
   if (existingUser) {
     return res.status(400).json({
@@ -92,19 +125,21 @@ export const registerUser = handle(async (req, res) => {
 
 // TO VERIFY EMAIL
 export const verifyEmail = handle(async (req, res) => {
-  const { otp } = req.body;
-  if (!req.body.email || !otp) {
+  const { email: rawEmail, otp } = req.body;
+  if (!rawEmail || !otp) {
     return res.status(400).json({
       success: false,
       message: "Email and OTP are required",
     });
   }
 
-  const email = normalizeEmail(req.body.email);
+  const email = normalizeEmail(rawEmail);
 
-  const user = await User.findOne({ email }).select(
-    "+verifyOtp +verifyOtpExpire"
-  );
+  const user = await User.findOneAndUpdate(
+    { email },
+    { $inc: { verifyOtpAttempts: 1 } },
+    { new: true }
+  ).select("+verifyOtp +verifyOtpExpire +verifyOtpAttempts");
   if (!user) {
     return res.status(404).json({
       success: false,
@@ -130,6 +165,13 @@ export const verifyEmail = handle(async (req, res) => {
     });
   }
 
+  if (user.verifyOtpAttempts > MAX_OTP_ATTEMPTS) {
+    return res.status(429).json({
+      success: false,
+      message: "Too many attempts. Please request a new OTP",
+    });
+  }
+
   const isOtpValid = await bcrypt.compare(String(otp), user.verifyOtp);
   if (!isOtpValid) {
     return res.status(400).json({
@@ -141,6 +183,7 @@ export const verifyEmail = handle(async (req, res) => {
   user.isVerified = true;
   user.verifyOtp = null;
   user.verifyOtpExpire = null;
+  user.verifyOtpAttempts = 0;
   await user.save();
   res.status(200).json({
     success: true,
@@ -158,7 +201,7 @@ export const resendOtp = handle(async (req, res) => {
 
   const email = normalizeEmail(req.body.email);
 
-  const user = await User.findOne({ email });
+  const user = await User.findOne({ email }).select("+verifyOtpExpire");
   if (!user)
     return res.status(404).json({
       success: false,
@@ -171,9 +214,16 @@ export const resendOtp = handle(async (req, res) => {
       message: "Email already verified",
     });
 
+  if (onCooldown(user.verifyOtpExpire))
+    return res.status(429).json({
+      success: false,
+      message: "Please wait a minute before requesting another OTP",
+    });
+
   const otp = generateOTP();
   user.verifyOtp = await bcrypt.hash(otp, 10);
   user.verifyOtpExpire = new Date(Date.now() + OTP_EXPIRY_MS);
+  user.verifyOtpAttempts = 0;
   await user.save();
   await sendVerificationOTP(user.email, user.name, otp);
   res.status(200).json({
@@ -184,14 +234,14 @@ export const resendOtp = handle(async (req, res) => {
 
 // TO LOGIN USER
 export const loginUser = handle(async (req, res) => {
-  const { password } = req.body;
-  if (!req.body.email || !password)
+  const { email: rawEmail, password } = req.body;
+  if (!isString(rawEmail) || !isString(password) || !rawEmail || !password)
     return res.status(400).json({
       success: false,
       message: "Email and password are required",
     });
 
-  const email = normalizeEmail(req.body.email);
+  const email = normalizeEmail(rawEmail);
 
   const user = await User.findOne({ email }).select("+password");
   if (!user)
@@ -218,6 +268,7 @@ export const loginUser = handle(async (req, res) => {
     process.env.JWT_SECRET,
     { expiresIn: "7d" }
   );
+
   res.status(200).json({
     success: true,
     message: "Login successful",
@@ -242,12 +293,13 @@ export const forgotPassword = handle(async (req, res) => {
 
   const email = normalizeEmail(req.body.email);
 
-  const user = await User.findOne({ email });
+  const user = await User.findOne({ email }).select("+resetOtpExpire");
 
-  if (user) {
+  if (user && !onCooldown(user.resetOtpExpire)) {
     const otp = generateOTP();
     user.resetOtp = await bcrypt.hash(otp, 10);
     user.resetOtpExpire = new Date(Date.now() + OTP_EXPIRY_MS);
+    user.resetOtpAttempts = 0;
     await user.save();
     await sendResetOTP(user.email, user.name, otp);
   }
@@ -260,24 +312,27 @@ export const forgotPassword = handle(async (req, res) => {
 
 // TO RESET PASSWORD
 export const resetPassword = handle(async (req, res) => {
-  const { otp, password } = req.body;
-  if (!req.body.email || !otp || !password)
+  const { email: rawEmail, otp, password } = req.body;
+  if (!rawEmail || !otp || !password)
     return res.status(400).json({
       success: false,
       message: "Email, OTP and password are required",
     });
 
-  if (password.length < MIN_PASSWORD_LENGTH)
+  const passwordError = getPasswordError(password);
+  if (passwordError)
     return res.status(400).json({
       success: false,
-      message: `Password must be at least ${MIN_PASSWORD_LENGTH} characters`,
+      message: passwordError,
     });
 
-  const email = normalizeEmail(req.body.email);
+  const email = normalizeEmail(rawEmail);
 
-  const user = await User.findOne({ email }).select(
-    "+resetOtp +resetOtpExpire"
-  );
+  const user = await User.findOneAndUpdate(
+    { email },
+    { $inc: { resetOtpAttempts: 1 } },
+    { new: true }
+  ).select("+resetOtp +resetOtpExpire +resetOtpAttempts");
   if (!user)
     return res.status(400).json({
       success: false,
@@ -294,6 +349,12 @@ export const resetPassword = handle(async (req, res) => {
       message: "OTP expired. Please request a new OTP.",
     });
 
+  if (user.resetOtpAttempts > MAX_OTP_ATTEMPTS)
+    return res.status(429).json({
+      success: false,
+      message: "Too many attempts. Please request a new OTP.",
+    });
+
   const isOtpValid = await bcrypt.compare(String(otp), user.resetOtp);
   if (!isOtpValid)
     return res.status(400).json({
@@ -304,6 +365,7 @@ export const resetPassword = handle(async (req, res) => {
   user.password = await bcrypt.hash(password, 10);
   user.resetOtp = null;
   user.resetOtpExpire = null;
+  user.resetOtpAttempts = 0;
   await user.save();
   res.status(200).json({
     success: true,

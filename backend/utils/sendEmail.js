@@ -1,21 +1,24 @@
 import brevo from "../config/brevo.js";
 
-export const sendVerificationOTP = async (email, name, otp) => {
+const escapeHtml = (value) =>
+  String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const sendOTPEmail = async ({ email, name, otp, subject, heading }) => {
   await brevo.transactionalEmails.sendTransacEmail({
     sender: {
       name: process.env.SENDER_NAME,
       email: process.env.SENDER_EMAIL,
     },
-    to: [
-      {
-        email,
-        name,
-      },
-    ],
-    subject: "Verify Your Email",
+    to: [{ email, name }],
+    subject,
     htmlContent: `
-      <h2>Email Verification</h2>
-      <p>Hello ${name},</p>
+      <h2>${heading}</h2>
+      <p>Hello ${escapeHtml(name)},</p>
       <p>Your OTP is:</p>
       <h1>${otp}</h1>
       <p>This OTP is valid for 10 minutes.</p>
@@ -23,25 +26,20 @@ export const sendVerificationOTP = async (email, name, otp) => {
   });
 };
 
-export const sendResetOTP = async (email, name, otp) => {
-  await brevo.transactionalEmails.sendTransacEmail({
-    sender: {
-      name: process.env.SENDER_NAME,
-      email: process.env.SENDER_EMAIL,
-    },
-    to: [
-      {
-        email,
-        name,
-      },
-    ],
-    subject: "Reset Password",
-    htmlContent: `
-      <h2>Reset Password</h2>
-      <p>Hello ${name},</p>
-      <p>Your OTP is:</p>
-      <h1>${otp}</h1>
-      <p>This OTP is valid for 10 minutes.</p>
-    `,
+export const sendVerificationOTP = (email, name, otp) =>
+  sendOTPEmail({
+    email,
+    name,
+    otp,
+    subject: "Verify Your Email",
+    heading: "Email Verification",
   });
-};
+
+export const sendResetOTP = (email, name, otp) =>
+  sendOTPEmail({
+    email,
+    name,
+    otp,
+    subject: "Reset Password",
+    heading: "Reset Password",
+  });

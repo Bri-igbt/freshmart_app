@@ -1,21 +1,36 @@
+import mongoose from "mongoose";
 import Address from "../models/Address.js";
+import handle from "../utils/handle.js";
 
-const handle = (fn) => async (req, res) => {
-  try {
-    await fn(req, res)
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    })
-  }
-};
+const FIELDS = [
+  "fullName",
+  "mobileNumber",
+  "pinCode",
+  "city",
+  "landmark",
+  "addressType",
+  "address",
+];
 
-// TO ADD A AADDRESS
+const pickFields = (body = {}) =>
+  Object.fromEntries(
+    FIELDS.filter((field) => body[field] !== undefined).map((field) => [
+      field,
+      body[field],
+    ])
+  );
+
+const notFound = (res) =>
+  res.status(404).json({
+    success: false,
+    message: "Address Not Found",
+  });
+
+// TO ADD AN ADDRESS
 export const addAddress = handle(async (req, res) => {
   const address = await Address.create({
+    ...pickFields(req.body),
     user: req.user._id,
-    ...req.body
   });
 
   res.status(201).json({
@@ -25,10 +40,10 @@ export const addAddress = handle(async (req, res) => {
   });
 });
 
-// TO GET A ADDRESS
+// TO GET ADDRESSES
 export const getAddress = handle(async (req, res) => {
-  const addresses = await Address.create({ user: req.user._id }).sort({
-    createdAt: -1
+  const addresses = await Address.find({ user: req.user._id }).sort({
+    createdAt: -1,
   });
 
   res.status(200).json({
@@ -38,45 +53,37 @@ export const getAddress = handle(async (req, res) => {
   });
 });
 
-// TO UPDATE A ADDRESS
+// TO UPDATE AN ADDRESS
 export const updateAddress = handle(async (req, res) => {
-  const address = await Address.findByIdAndUpdate(
-    {_id: req.params.id, user: req.user._id},
-    req.body,
-    { returnDocument: "after" },
-  );
+  if (!mongoose.isObjectIdOrHexString(req.params.id)) return notFound(res);
 
-  if (!address) {
-    return res.status(404).json({
-      success: false,
-      message: "Address Not Found",
-    });
-  };
+  const address = await Address.findOneAndUpdate(
+    { _id: req.params.id, user: req.user._id },
+    { $set: pickFields(req.body) },
+    { new: true, runValidators: true }
+  );
+  if (!address) return notFound(res);
 
   res.status(200).json({
     success: true,
     message: "Address Updated Successfully",
     address,
   });
-}); 
+});
 
-// TO DELETE A ADDRESS
+// TO DELETE AN ADDRESS
 export const deleteAddress = handle(async (req, res) => {
-  const address = await Address.findByIdAndDelete(
-    {_id: req.params.id, user: req.user._id}
-  );
+  if (!mongoose.isObjectIdOrHexString(req.params.id)) return notFound(res);
 
-  if (!address) {
-    return res.status(404).json({
-      success: false,
-      message: "Address Not Found",
-    });
-  };
+  const address = await Address.findOneAndDelete({
+    _id: req.params.id,
+    user: req.user._id,
+  });
+  if (!address) return notFound(res);
 
   res.status(200).json({
     success: true,
     message: "Address Deleted Successfully",
     address,
   });
-}); 
-
+});

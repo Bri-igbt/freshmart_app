@@ -6,6 +6,7 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
+      maxlength: 100,
     },
     email: {
       type: String,
@@ -13,16 +14,16 @@ const userSchema = new mongoose.Schema(
       required: true,
       lowercase: true,
       trim: true,
+      match: [/^\S+@\S+\.\S+$/, "Please provide a valid email address"],
     },
     phone: {
       type: String,
       required: true,
       unique: true,
       trim: true,
-      match: [
-        /^(\+234|0)[789][01]\d{8}$/,
-        "Please provide a valid phone number",
-      ],
+      // Stored in local format (e.g. 08012345678).
+      // The controller converts +234 / 234 numbers before saving.
+      match: [/^0[789][01]\d{8}$/, "Please provide a valid phone number"],
     },
     password: {
       type: String,
@@ -48,6 +49,11 @@ const userSchema = new mongoose.Schema(
       default: null,
       select: false,
     },
+    verifyOtpAttempts: {
+      type: Number,
+      default: 0,
+      select: false,
+    },
     resetOtp: {
       type: String,
       default: null,
@@ -56,6 +62,11 @@ const userSchema = new mongoose.Schema(
     resetOtpExpire: {
       type: Date,
       default: null,
+      select: false,
+    },
+    resetOtpAttempts: {
+      type: Number,
+      default: 0,
       select: false,
     },
   },

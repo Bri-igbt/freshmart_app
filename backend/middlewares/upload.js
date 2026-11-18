@@ -1,38 +1,39 @@
 import multer from "multer";
-import path from 'path';
-import fs from 'fs';
+import os from "os";
+import crypto from "crypto";
 
-const uploadDir = "uploads"
-
-const ensureUploadDirectory = () => {
-  try {
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true })
-    }
-
-  } catch (error) {
-    console.error("Upload directory error:", error.message);
-    throw error;
-  };
+const MAX_FILE_SIZE = 5 * 1024 * 1024; 
+const EXTENSIONS = {
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "image/webp": ".webp",
 };
 
 const storage = multer.diskStorage({
-  destination: (req, file, cb ) => {
-    try {
-      ensureUploadDirectory();
-      cb(null, uploadDir);
-    } catch (error) {
-      cb(error);
-    }
-  },
-  filename: (req, file, cb) => {
-    try {
-      cb(null, Date.now() + path.extname(file.originalname));
-    } catch (error) {
-      cb(error);
-    }
+  destination: (req, file, cb) => cb(null, os.tmpdir()),
+  filename: (req, file, cb) =>
+    cb(null, `${crypto.randomUUID()}${EXTENSIONS[file.mimetype]}`),
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: MAX_FILE_SIZE },
+  fileFilter: (req, file, cb) => {
+    if (EXTENSIONS[file.mimetype]) return cb(null, true);
+    cb(new Error("Only JPG, PNG or WebP images are allowed"));
   },
 });
 
-const upload = multer({ storage });
+export const uploadSingleImage = (req, res, next) => {
+  upload.single("image")(req, res, (error) => {
+    if (!error) return next();
+
+    const message =
+      error.code === "LIMIT_FILE_SIZE"
+        ? "Image must be 5MB or smaller"
+        : error.message;
+    res.status(400).json({ success: false, message });
+  });
+};
+
 export default upload;

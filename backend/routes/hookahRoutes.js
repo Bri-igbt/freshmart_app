@@ -1,4 +1,6 @@
 import express from "express";
+import { authMiddleware } from "../middlewares/authMiddleware.js";
+import { adminMiddleware } from "../middlewares/adminMiddleware.js";
 import {
   addHookah,
   deleteHookah,
@@ -9,10 +11,10 @@ import {
 
 const hookahRouter = express.Router();
 
-hookahRouter.post("/", addHookah);
 hookahRouter.get("/", getHookahs);
 hookahRouter.get("/:id", getHookahById);
-hookahRouter.get("/:id", updateHookah);
-hookahRouter.delete("/:id", deleteHookah);
+hookahRouter.post("/", authMiddleware, adminMiddleware, addHookah);
+hookahRouter.put("/:id", authMiddleware, adminMiddleware, updateHookah);
+hookahRouter.delete("/:id", authMiddleware, adminMiddleware, deleteHookah);
 
 export default hookahRouter;

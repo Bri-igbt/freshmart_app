@@ -1,165 +1,140 @@
+import mongoose from "mongoose";
 import Category from "../models/Category.js";
 import Product from "../models/Product.js";
-import cloudinary from "../config/cloudinary.js";
+import handle from "../utils/handle.js";
+import removeImage from "../utils/removeImage.js";
+import { hasValidImage, isNonEmptyString } from "../utils/validators.js";
 
-// TO ADD CATEGORY
-export const addCategory = async (req, res) => {
-  try {
-    const { categoryName, image } = req.body;
-    if (!categoryName) {
-      return res.status(400).json({
-        success: false,
-        message: "Category Name Required",
-      });
-    }
+const notFound = (res) =>
+  res.status(404).json({
+    success: false,
+    message: "Category Not Found",
+  });
 
-    if (!image?.url || !image?.public_id) {
-      return res.status(400).json({
-        success: false,
-        message: "Image Object Missing",
-      });
-    }
+// TO ADD A CATEGORY
+export const addCategory = handle(async (req, res) => {
+  const { categoryName, image } = req.body;
 
-    const categoryExists = await Category.findOne({ categoryName });
-    if (categoryExists) {
-      return res.status(400).json({
-        success: false,
-        message: "Category Already Exists",
-      });
-    }
-
-    const category = await Category.create({
-      categoryName,
-      image: {
-        url: image.url,
-        public_id: image.public_id,
-      },
-    });
-
-    res.status(201).json({
-      success: true,
-      message: "Category Added Successfully",
-      category,
-    });
-  } catch (error) {
-    return res.status(500).json({
+  if (!isNonEmptyString(categoryName)) {
+    return res.status(400).json({
       success: false,
-      message: error.message,
-      stack: error.stack,
+      message: "Category Name Required",
     });
   }
-};
+
+  if (!hasValidImage(image)) {
+    return res.status(400).json({
+      success: false,
+      message: "Image Object Missing",
+    });
+  }
+
+  const name = categoryName.trim();
+  if (await Category.exists({ categoryName: name })) {
+    return res.status(400).json({
+      success: false,
+      message: "Category Already Exists",
+    });
+  }
+
+  const category = await Category.create({
+    categoryName: name,
+    image: { url: image.url, public_id: image.public_id },
+  });
+
+  res.status(201).json({
+    success: true,
+    message: "Category Added Successfully",
+    category,
+  });
+});
 
 // TO GET CATEGORIES
-export const getCategories = async (req, res) => {
-  try {
-    const categories = await Category.find();
-    res.status(200).json({
-      success: true,
-      count: categories.length,
-      categories,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
+export const getCategories = handle(async (req, res) => {
+  const categories = await Category.find();
 
-// TO GET CATEGORY
-export const getCategory = async (req, res) => {
-  try {
-    const category = await Category.findById(req.params.id);
-    if (!category)
-      return res.status(404).json({
-        success: false,
-        message: "Category Not Found",
-      });
+  res.status(200).json({
+    success: true,
+    count: categories.length,
+    categories,
+  });
+});
 
-    res.status(200).json({
-      success: true,
-      category,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
+// TO GET A CATEGORY
+export const getCategory = handle(async (req, res) => {
+  if (!mongoose.isObjectIdOrHexString(req.params.id)) return notFound(res);
+
+  const category = await Category.findById(req.params.id);
+  if (!category) return notFound(res);
+
+  res.status(200).json({
+    success: true,
+    category,
+  });
+});
 
 // TO UPDATE A CATEGORY
-export const updateCategory = async (req, res) => {
-  try {
-    const category = await Category.findById(req.params.id);
-    if (!category)
-      return res.status(404).json({
-        success: false,
-        message: "Category Not Found",
-      });
+export const updateCategory = handle(async (req, res) => {
+  if (!mongoose.isObjectIdOrHexString(req.params.id)) return notFound(res);
 
-    const { categoryName, image } = req.body;
-    const prevName = category.categoryName;
-    let oldImagePublicId = null;
-    if (categoryName) category.categoryName = categoryName;
-    if (
-      image?.url &&
-      image?.public_id &&
-      image.public_id !== category.image.public_id
-    ) {
-      oldImagePublicId = category.image.public_id;
-      category.image = { url: image.url, public_id: image.public_id };
-    }
-    await category.save();
-    if (categoryName && categoryName !== prevName) {
-      await Product.updateMany(
-        { category: prevName },
-        { $set: { category: categoryName } }
-      );
-    }
-    if (oldImagePublicId) {
-      try {
-        await cloudinary.uploader.destroy(oldImagePublicId);
-      } catch (cleanupError) {
-        console.log("Old category image cleanup failed:", cleanupError.message);
-      }
-    }
-    res.status(200).json({
-      success: true,
-      message: "Category Updated Successfully",
-      category,
-    });
-  } catch (error) {
-    res.status(500).json({
+  const category = await Category.findById(req.params.id);
+  if (!category) return notFound(res);
+
+  const { categoryName, image } = req.body;
+  if (categoryName !== undefined && !isNonEmptyString(categoryName)) {
+    return res.status(400).json({
       success: false,
-      message: error.message,
+      message: "Category Name Required",
     });
   }
-};
 
-// RO DELETE A CATEGORY
-export const deleteCategory = async (req, res) => {
-  try {
-    const category = await Category.findById(req.params.id);
-    if (!category)
-      return res.status(404).json({
-        success: false,
-        message: "Category Not Found",
-      });
-      
-    if (category.image?.public_id)
-      await cloudinary.uploader.destroy(category.image.public_id);
-    await Category.findByIdAndDelete(req.params.id);
-    res.status(200).json({
-      success: true,
-      message: "Category Deleted Successfully",
-    });
+  const prevName = category.categoryName;
+  let oldImagePublicId = null;
 
-  } catch (error) {
-    res.status(500).json({
+  if (categoryName !== undefined) category.categoryName = categoryName.trim();
+
+  if (hasValidImage(image) && image.public_id !== category.image.public_id) {
+    oldImagePublicId = category.image.public_id;
+    category.image = { url: image.url, public_id: image.public_id };
+  }
+
+  await category.save();
+
+  if (category.categoryName !== prevName) {
+    await Product.updateMany(
+      { category: prevName },
+      { $set: { category: category.categoryName } }
+    );
+  }
+
+  await removeImage(oldImagePublicId);
+
+  res.status(200).json({
+    success: true,
+    message: "Category Updated Successfully",
+    category,
+  });
+});
+
+// TO DELETE A CATEGORY
+export const deleteCategory = handle(async (req, res) => {
+  if (!mongoose.isObjectIdOrHexString(req.params.id)) return notFound(res);
+
+  const category = await Category.findById(req.params.id);
+  if (!category) return notFound(res);
+
+  if (await Product.exists({ category: category.categoryName })) {
+    return res.status(400).json({
       success: false,
-      message: error.message,
+      message: "Move or delete this category's products first",
     });
   }
-};
+
+  await Category.findByIdAndDelete(req.params.id);
+  await removeImage(category.image?.public_id);
+
+  res.status(200).json({
+    success: true,
+    message: "Category Deleted Successfully",
+  });
+});

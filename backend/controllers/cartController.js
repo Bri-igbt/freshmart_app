@@ -1,114 +1,117 @@
-import Cart from "../models/Cart.js"; 
+import mongoose from "mongoose";
+import Cart from "../models/Cart.js";
 import Product from "../models/Product.js";
+import handle from "../utils/handle.js";
+
+const MAX_QUANTITY = 100;
+
+const parseQuantity = (value, fallback) => {
+  const quantity = value === undefined ? fallback : Number(value);
+  return Number.isInteger(quantity) && quantity >= 1 && quantity <= MAX_QUANTITY
+    ? quantity
+    : null;
+};
+
+const notFound = (res) =>
+  res.status(404).json({
+    success: false,
+    message: "Cart Item Not Found",
+  });
 
 // TO ADD TO A CART
-export const addToCart = async (req, res) => {
-  try {
-    const { product, quantity } = req.body;
-    const productExists = await Product.findById(product);
-    if (!productExists) {
-      return res.status(404).json({
-        success: false,
-        message: "Product Not Found",
-      });
-    }
+export const addToCart = handle(async (req, res) => {
+  const { product, quantity } = req.body;
 
-    const cartItem = await Cart.findOne({ user: req.user._id, product });
-    if (cartItem) {
-      cartItem.quantity += quantity || 1;
-      await cartItem.save();
-      return res.status(200).json({
-        success: true,
-        message: "Cart Updated Successfully",
-        cart: cartItem,
-      });
-    }
-
-    const cart = await Cart.create({
-      user: req.user._id,
-      product,
-      quantity: quantity || 1,
-    });
-
-    return res.status(201).json({
-      success: true,
-      message: "Product Added To Cart",
-      cart,
-    });
-  } catch (error) {
-    res.status(500).json({
+  if (!mongoose.isObjectIdOrHexString(product)) {
+    return res.status(404).json({
       success: false,
-      message: error.message,
+      message: "Product Not Found",
     });
   }
-};
+
+  const qty = parseQuantity(quantity, 1);
+  if (!qty) {
+    return res.status(400).json({
+      success: false,
+      message: `Quantity must be a whole number from 1 to ${MAX_QUANTITY}`,
+    });
+  }
+
+  if (!(await Product.exists({ _id: product }))) {
+    return res.status(404).json({
+      success: false,
+      message: "Product Not Found",
+    });
+  }
+
+  const cart = await Cart.findOneAndUpdate(
+    { user: req.user._id, product },
+    { $inc: { quantity: qty } },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  );
+
+  if (cart.quantity > MAX_QUANTITY) {
+    cart.quantity = MAX_QUANTITY;
+    await cart.save();
+  }
+
+  res.status(200).json({
+    success: true,
+    message: "Product Added To Cart",
+    cart,
+  });
+});
 
 // TO GET A CART
-export const getCart = async (req, res) => {
-  try {
-    const cart = await Cart.find({user: req.user._id}).populate("product");
-    res.status(200).json({
-      success: true,
-      count: cart.length,
-      cart,
-    });
+export const getCart = handle(async (req, res) => {
+  const items = await Cart.find({ user: req.user._id }).populate("product");
+  const cart = items.filter((item) => item.product);
 
-  } catch (error) {
-    res.status(500).json({
+  res.status(200).json({
+    success: true,
+    count: cart.length,
+    cart,
+  });
+});
+
+// TO UPDATE A CART ITEM
+export const updateCart = handle(async (req, res) => {
+  if (!mongoose.isObjectIdOrHexString(req.params.id)) return notFound(res);
+
+  const qty = parseQuantity(req.body.quantity, undefined);
+  if (!qty) {
+    return res.status(400).json({
       success: false,
-      message: error.message,
+      message: `Quantity must be a whole number from 1 to ${MAX_QUANTITY}`,
     });
   }
-};
 
-// TO UPDATE A CART
-export const updateCart = async (req, res) => {
-  try {
-    const cart = await Cart.findByIdAndUpdate(req.params.id, req.body, {
-      returnDocument: "after",
-    });
+  const cart = await Cart.findOneAndUpdate(
+    { _id: req.params.id, user: req.user._id },
+    { $set: { quantity: qty } },
+    { new: true }
+  );
+  if (!cart) return notFound(res);
 
-    if (!cart) {
-      return res.status(404).json({
-        success: false,
-        message: "Cart Item Not Found",
-      });
-    };
+  res.status(200).json({
+    success: true,
+    message: "Cart Updated Successfully",
+    cart,
+  });
+});
 
-    res.status(200).json({
-      status: true,
-      message: "Cart Updated Successfully",
-      cart,
-    });
+// TO REMOVE A CART ITEM
+export const removeCart = handle(async (req, res) => {
+  if (!mongoose.isObjectIdOrHexString(req.params.id)) return notFound(res);
 
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
+  const cart = await Cart.findOneAndDelete({
+    _id: req.params.id,
+    user: req.user._id,
+  });
+  if (!cart) return notFound(res);
 
-// TO REMOVE A CART
-export const removeCart = async (req, res) => {
-  try {
-    const cart = await Cart.findByIdAndDelete(req.params.id);
-    if (!cart) {
-      return res.status(404).json({
-        success: false,
-        message: "cart Item Not Found",
-      });
-    };
-
-    res.status(200).json({
-      status: true,
-      message: "Product Removed From Cart"
-    });
-
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
+  res.status(200).json({
+    success: true,
+    message: "Product Removed From Cart",
+  });
+});
