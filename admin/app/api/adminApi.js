@@ -79,13 +79,23 @@ export const updateHookah = (id, data) => API.put(`/hookahs/${id}`, data);
 
 export const deleteHookah = (id) => API.delete(`/hookahs/${id}`);
 
-// Upload Images
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
 export const uploadImage = async (file) => {
+  if (!file) throw new Error("Please select an image");
+  if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+    throw new Error("Only JPG, PNG or WebP images are allowed");
+  }
+  if (file.size > MAX_IMAGE_SIZE) {
+    throw new Error("Image must be 5MB or smaller");
+  }
+
   const formData = new FormData();
   formData.append("image", file);
 
-  const response = await API.post("/upload", formData);
-  return response.data;
+  const { data } = await API.post("/upload", formData);
+  return data; 
 };
 
 export default API;
