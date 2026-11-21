@@ -3,7 +3,7 @@
 import { AlertTriangle, Eye, Phone } from "lucide-react";
 import { formatMoney } from "../DashboardUtils";
 import StatusDropdown from "./StatusDropdown";
-import { formatShortOrderId } from "@/app/utils/OrderIds.js";
+import { formatShortOrderId } from "@/app/utils/orderIds.js"; 
 import { ordersTableStyles as s } from "@/app/assets/dummyStyles.js";
 
 const OrdersTable = ({ orders = [], onSelectOrder, onStatusChange }) => (

@@ -45,3 +45,5 @@ const OrderItemCard = ({ item }) => {
     </article>
   );
 }
+
+export default OrderItemCard;

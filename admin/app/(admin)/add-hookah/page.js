@@ -1,6 +1,7 @@
-" use client";
+"use client";
 
-import React, { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import {
   Upload,
   X,
@@ -15,7 +16,18 @@ import {
   Banknote,
 } from "lucide-react";
 import { createHookah, uploadImage } from "@/app/api/adminApi.js";
-import { addHookahPageStyles as s } from "@/app/assets/dummyStyles.js"; 
+import { addHookahPageStyles as s } from "@/app/assets/dummyStyles.js";
+
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024; 
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+const EMPTY_FORM = {
+  name: "",
+  company: "",
+  selling: "",
+  original: "",
+  weight: "",
+};
 
 const InputField = ({
   icon: Icon,
@@ -28,7 +40,7 @@ const InputField = ({
   ...props
 }) => (
   <div className={s.inputFieldWrapper}>
-    <label className={s.inputFieldLabel}>
+    <label htmlFor={props.name} className={s.inputFieldLabel}>
       {Icon && <Icon className={s.inputFieldIcon} />}
       {label}
     </label>
@@ -36,6 +48,7 @@ const InputField = ({
     <div className={s.inputFieldInner}>
       {prefix && <span className={s.inputFieldPrefix}>{prefix}</span>}
       <input
+        id={props.name}
         type={type}
         value={value}
         onChange={onChange}
@@ -59,78 +72,121 @@ const page = () => {
     message: "",
     type: "success",
   });
-  const [form, setForm] = useState({
-    name: "",
-    company: "",
-    selling: "",
-    original: "",
-    weight: "",
-  });
+  const [form, setForm] = useState(EMPTY_FORM);
+
+  const toastTimer = useRef(null);
+  const uploadedRef = useRef(null);
+
+  useEffect(() => () => clearTimeout(toastTimer.current), []);
+
+  const showToast = (message, type = "success") => {
+    clearTimeout(toastTimer.current);
+    setToast({ show: true, message, type });
+    toastTimer.current = setTimeout(
+      () => setToast((current) => ({ ...current, show: false })),
+      3000
+    );
+  };
 
   const handleChange = (e) =>
     setForm({ ...form, [e.target.name]: e.target.value });
 
-  const handleImage = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setImage(file);
-      const reader = new FileReader();
-      reader.onloadend = () => setPreview(reader.result);
-      reader.readerAsDataURL(file);
+  const processFile = (file) => {
+    if (!file) return;
+
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      return showToast("Only JPG, PNG or WebP images are allowed.", "error");
     }
+    if (file.size > MAX_IMAGE_SIZE) {
+      return showToast("Image must be 5MB or smaller.", "error");
+    }
+
+    setImage(file);
+    uploadedRef.current = null;
+
+    const reader = new FileReader();
+    reader.onloadend = () => setPreview(reader.result);
+    reader.readAsDataURL(file);
+  };
+
+  const handleImage = (e) => processFile(e.target.files?.[0]);
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    processFile(e.dataTransfer.files?.[0]);
   };
 
   const removeImage = () => {
     setImage(null);
     setPreview(null);
-  };
-
-  const showToast = (message, type = "success") => {
-    setToast({ show: true, message, type });
-    setTimeout(() => {
-      setToast({ show: false, message: "", type: "" });
-      if (type === "success") window.location.reload();
-    }, 1500);
+    uploadedRef.current = null;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const { name, company, selling, original, weight } = form;
 
-    if (!name || !company || !selling || !original || !weight || !image) {
-      return showToast("Please fill all fields nd uplaod an image.", "error");
+    const name = form.name.trim();
+    const company = form.company.trim();
+    const weight = form.weight.trim();
+    const selling = Number(form.selling);
+    const original = Number(form.original);
+
+    if (
+      !name ||
+      !company ||
+      !weight ||
+      form.selling === "" ||
+      form.original === "" ||
+      !image
+    ) {
+      return showToast("Please fill all fields and upload an image.", "error");
+    }
+
+    if (
+      !Number.isFinite(selling) ||
+      !Number.isFinite(original) ||
+      selling < 0 ||
+      original < 0
+    ) {
+      return showToast("Prices must be valid positive numbers.", "error");
+    }
+
+    if (original < selling) {
+      return showToast(
+        "Original price can't be lower than the selling price.",
+        "error"
+      );
     }
 
     try {
       setIsSubmitting(true);
-      const imageData = await uploadImage(image);
+
+      if (uploadedRef.current?.file !== image) {
+        const imageData = await uploadImage(image);
+        uploadedRef.current = { file: image, image: imageData.image };
+      }
+      const { url, public_id } = uploadedRef.current.image;
 
       await createHookah({
-        image: {
-          url: imageData.image.url,
-          public_id: imageData.image.public_id,
-        },
+        image: { url, public_id },
         name,
         company,
-        sellingPrice: Number(selling),
-        oldPrice: Number(original),
+        sellingPrice: selling,
+        oldPrice: original,
         size: weight,
       });
-      showToast("Hookah added Successfully");
 
-      setForm({
-        name: "",
-        company: "",
-        selling: "",
-        original: "",
-        weight: "",
-      });
-
-      setImage(null);
-      setPreview(null);
+      showToast("Hookah added successfully");
+      setForm(EMPTY_FORM);
+      removeImage();
     } catch (error) {
       console.log(error);
-      showToast("Failed to add hookah.", "error");
+      showToast(
+        error.response?.data?.message ||
+          error.message ||
+          "Failed to add hookah.",
+        "error"
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -181,9 +237,10 @@ const page = () => {
 
       {toast.show && (
         <div
+          role="status"
           className={`${s.toastBase} ${
             toast.type === "success" ? s.toastSuccess : s.toastError
-          } toast-animate `}
+          } toast-animate`}
         >
           {toast.type === "success" ? (
             <CheckCircle className={s.toastIconSuccess} />
@@ -204,9 +261,138 @@ const page = () => {
           </h1>
           <div className={s.headerBadge}>
             <Package className={s.headerBadgeIcon} />
-            
+            <span className={s.headerBadgeText}>New Arrival</span>
           </div>
         </div>
+
+        <form onSubmit={handleSubmit} className={s.form}>
+          <div>
+            <label className={s.uploadLabel}>Hookah Image</label>
+            <div
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={handleDrop}
+              className={`${s.uploadAreaBase} ${
+                preview ? s.uploadAreaWithPreview : s.uploadAreaEmpty
+              }`}
+            >
+              {preview ? (
+                <div className={s.uploadPreviewContainer}>
+                  <Image
+                    src={preview}
+                    className={s.uploadPreviewImage}
+                    alt="hookah image"
+                    width={100}
+                    height={100}
+                    unoptimized
+                  />
+
+                  <button
+                    type="button"
+                    onClick={removeImage}
+                    aria-label="Remove image"
+                    className={s.removeImageButton}
+                  >
+                    <X className={s.iconSm} />
+                  </button>
+                </div>
+              ) : (
+                <label className={s.uploadLabelInner}>
+                  <div className={s.uploadIconWrapper}>
+                    <Upload className={s.uploadIcon} />
+                  </div>
+
+                  <p className={s.uploadText}>
+                    <span className={s.uploadTextHighlight}>
+                      Click to upload
+                    </span>{" "}
+                    or drag and drop
+                  </p>
+                  <p className={s.uploadSubtext}>PNG, JPG, WEBP (max 5MB)</p>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={handleImage}
+                    className={s.hiddenInput}
+                  />
+                </label>
+              )}
+            </div>
+          </div>
+
+          <div className={s.fieldsGrid}>
+            <InputField
+              icon={Tag}
+              label="Name"
+              name="name"
+              value={form.name}
+              onChange={handleChange}
+              placeholder="e.g. Pharaoh's Crown"
+            />
+            <InputField
+              icon={Weight}
+              label="Weight / Size"
+              name="weight"
+              value={form.weight}
+              onChange={handleChange}
+              placeholder="e.g. 1 set (15 mm)"
+            />
+            <InputField
+              icon={Banknote}
+              label="Selling Price"
+              type="number"
+              name="selling"
+              value={form.selling}
+              onChange={handleChange}
+              placeholder="15000"
+              prefix="₦"
+              min="0"
+              step="any"
+            />
+            <InputField
+              icon={Banknote}
+              label="Original Price"
+              type="number"
+              name="original"
+              value={form.original}
+              onChange={handleChange}
+              placeholder="20000"
+              prefix="₦"
+              min="0"
+              step="any"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="company" className={s.companyLabel}>
+              <Building className={s.companyIcon} /> Company Name
+            </label>
+            <input
+              id="company"
+              type="text"
+              name="company"
+              value={form.company}
+              onChange={handleChange}
+              autoComplete="off"
+              placeholder="e.g. Hookah Masters LLC"
+              className={s.companyInput}
+            />
+          </div>
+
+          <div className={s.submitWrapper}>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className={`${s.submitButton} btn-glow`}
+            >
+              {isSubmitting ? (
+                <Loader2 className={`${s.submitIcon} animate-spin`} />
+              ) : (
+                <ArrowRight className={s.submitIcon} />
+              )}
+              <span>{isSubmitting ? "Adding..." : "Add Hookah"}</span>
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

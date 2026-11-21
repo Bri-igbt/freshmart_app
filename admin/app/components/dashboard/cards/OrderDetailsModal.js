@@ -18,9 +18,9 @@ import {
 } from "lucide-react";
 import { formatDateOnly, formatMoney } from "../DashboardUtils";
 import InfoRow from "./InfoRow";
-import OrderItemCard from "./OrderItemCard";
+import OrderItemCard from "./OrderItemCard.js"; 
 import StatusTimeline from "./StatusTimeline";
-import { formatShortOrderId } from "@/app/utils/OrderIds.js";
+import { formatShortOrderId } from "@/app/utils/orderIds.js"; 
 import { orderDetailsModalStyles as s } from "@/app/assets/dummyStyles.js";
 
 const OrderTotalPill = ({ value }) => (

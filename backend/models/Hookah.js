@@ -41,11 +41,10 @@ const hookahSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-hookahSchema.pre("validate", function (next) {
+hookahSchema.pre("validate", function () {
   if (this.oldPrice < this.sellingPrice) {
     this.invalidate("oldPrice", "Old price cannot be lower than selling price");
   }
-  next();
 });
 
 const Hookah = mongoose.model("Hookah", hookahSchema);

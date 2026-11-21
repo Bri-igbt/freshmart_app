@@ -47,11 +47,11 @@ const productSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-productSchema.pre("validate", function (next) {
+
+productSchema.pre("validate", function () {
   if (this.oldPrice < this.sellingPrice) {
     this.invalidate("oldPrice", "Old price cannot be lower than selling price");
   }
-  next();
 });
 
 const Product = mongoose.model("Product", productSchema);

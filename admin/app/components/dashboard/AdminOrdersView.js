@@ -1,13 +1,33 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
-  BadgeIndianRupee,
+  Banknote,
   Filter,
   PackageCheck,
   Search,
   ShoppingCart,
   XCircle,
 } from "lucide-react";
+import "@/app/components/dashboard/dashboard.css";
+import {
+  formatMoney,
+  getVisibleOrders,
+} from "@/app/components/dashboard/DashboardUtils.js";
+import CancelConfirm from "./cards/CancelConfirm.js"; 
+import OrderDetailsModal from "./cards/OrderDetailsModal.js"; 
+import OrdersTable from "./cards/OrdersTable.js"; 
+import StatsGrid from "./cards/StatsGrid.js"; 
+import Toast from "./cards/Toast.js"; 
+import {
+  getAllOrders,
+  getDashboard,
+  getSingleOrder,
+  updateOrderStatus as updateOrderStatusApi,
+} from "@/app/api/adminApi.js";
+import { adminOrdersViewStyles as s } from "@/app/assets/dummyStyles.js";
+
 const statusOptions = [
   "All",
   "Processing",
@@ -15,19 +35,8 @@ const statusOptions = [
   "Delivered",
   "Cancelled",
 ];
-import "./dashboard.css";
-import { formatMoney, getVisibleOrders } from  "@/app/components/dashboard/DashboardUtils.js"
-import CancelConfirm from "./cards/CancelConfirm.js"; 
-import OrderDetailsModal from "./cards/OrderDetailsModal.js"; 
-import OrdersTable from "./cards/OrdersTable.js"; 
-import StatsGrid from "./cards/StatsGrid.js"; 
-import Toast from "./cards/Toast.js"; 
-import {
-  getDashboard,
-  getSingleOrder,
-  updateOrderStatus as updateOrderStatusApi,
-} from "@/app/api/adminApi.js"
-import { adminOrdersViewStyles as s } from "@/app/assets/dummyStyles.js"; 
+
+const PAGE_SIZE = 10;
 
 const getPaymentStatusForOrderStatus = (order, orderStatus) => {
   if (order.paymentMethod === "COD") {
@@ -36,44 +45,107 @@ const getPaymentStatusForOrderStatus = (order, orderStatus) => {
   return "Paid";
 };
 
-function AdminOrdersView({
+const page = ({
   limit,
   showAllButton = false,
   title = "Admin Dashboard",
   subtitle = "Track orders, revenue, customer details, and delivery progress in one clean workspace.",
   eyebrow = "Store Control",
   showSummary = true,
-}) {
+}) => {
+  const isPaged = !limit;
+  const needsDashboard = showSummary || !isPaged;
+
   const [orders, setOrders] = useState([]);
   const [dashboard, setDashboard] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [ordersLoading, setOrdersLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("All");
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalOrders, setTotalOrders] = useState(0);
   const [toast, setToast] = useState(null);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [cancelConfirmOrder, setCancelConfirmOrder] = useState(null);
   const [cancellingOrderId, setCancellingOrderId] = useState(null);
 
-  const fetchDashboard = async () => {
+  const showError = useCallback((error, fallback) => {
+    setToast({
+      type: "warning",
+      message: error.response?.data?.message || fallback,
+    });
+  }, []);
+
+  const fetchDashboard = useCallback(async () => {
     try {
-      setLoading(true);
       const { data } = await getDashboard();
       setDashboard(data.dashboard);
-      setOrders(data.dashboard.latestOrders || []);
-    } catch (err) {
-      console.log(err);
-    } finally {
-      setLoading(false);
+      if (!isPaged) setOrders(data.dashboard.latestOrders || []);
+    } catch (error) {
+      console.log(error);
+      showError(error, "Failed to load the dashboard");
     }
+  }, [isPaged, showError]);
+
+  const fetchOrders = useCallback(async () => {
+    if (!isPaged) return;
+
+    try {
+      setOrdersLoading(true);
+      const { data } = await getAllOrders({
+        search: debouncedSearch,
+        status: filterStatus,
+        page,
+        limit: PAGE_SIZE,
+      });
+
+      setOrders(data.orders || []);
+      setTotalOrders(data.totalOrders || 0);
+      setTotalPages(data.totalPages || 1);
+
+      if (data.totalPages > 0 && page > data.totalPages) {
+        setPage(data.totalPages);
+      }
+    } catch (error) {
+      console.log(error);
+      showError(error, "Failed to load orders");
+    } finally {
+      setOrdersLoading(false);
+    }
+  }, [isPaged, debouncedSearch, filterStatus, page, showError]);
+
+  const refreshData = async () => {
+    await Promise.all([
+      needsDashboard ? fetchDashboard() : null,
+      fetchOrders(),
+    ]);
   };
 
   useEffect(() => {
-    fetchDashboard();
-  }, []);
+    const load = async () => {
+      if (needsDashboard) await fetchDashboard();
+      setInitialLoading(false);
+    };
+    load();
+  }, [needsDashboard, fetchDashboard]);
+
+  useEffect(() => {
+    fetchOrders();
+  }, [fetchOrders]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search.trim());
+      setPage(1);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   useEffect(() => {
     if (!toast) return undefined;
-    const timer = setTimeout(() => setToast(null), 2200);
+    const timer = setTimeout(() => setToast(null), 2500);
     return () => clearTimeout(timer);
   }, [toast]);
 
@@ -83,6 +155,7 @@ function AdminOrdersView({
       setSelectedOrder(data.order);
     } catch (error) {
       console.log(error);
+      showError(error, "Failed to load the order");
     }
   };
 
@@ -121,31 +194,34 @@ function AdminOrdersView({
             }
           : prev
       );
-      await fetchDashboard();
+      await refreshData();
       setToast({
         type: status === "Cancelled" ? "warning" : "success",
         message: `Order ${status.toLowerCase()} successfully.`,
       });
-    } catch (err) {
-      console.log(err.response?.data || err);
+    } catch (error) {
+      console.log(error.response?.data || error);
+      showError(error, "Failed to update the order");
     }
   };
 
   const visibleOrders = useMemo(() => {
+    if (isPaged) return orders;
+
     return getVisibleOrders({
       orders,
       search,
       status: filterStatus,
       limit,
     });
-  }, [orders, search, filterStatus, limit]);
+  }, [isPaged, orders, search, filterStatus, limit]);
 
   const statCards = [
     {
       title: "Total Revenue",
       value: formatMoney(dashboard?.totalRevenue || 0),
       sub: "Successful Payments",
-      icon: BadgeIndianRupee,
+      icon: Banknote,
     },
     {
       title: "Active Orders",
@@ -201,20 +277,21 @@ function AdminOrdersView({
             }
           : prev
       );
-      await fetchDashboard();
+      await refreshData();
       setCancelConfirmOrder(null);
       setToast({
         type: "warning",
         message: "Order cancelled successfully.",
       });
-    } catch (err) {
-      console.log(err.response?.data || err);
+    } catch (error) {
+      console.log(error.response?.data || error);
+      showError(error, "Failed to cancel the order");
     } finally {
       setCancellingOrderId(null);
     }
   };
 
-  if (loading) {
+  if (initialLoading) {
     return <div className={s.loadingState}>Loading Dashboard...</div>;
   }
 
@@ -257,7 +334,11 @@ function AdminOrdersView({
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search customer, mobile, or order id"
+                  placeholder={
+                    isPaged
+                      ? "Search customer, email, or mobile"
+                      : "Search customer, mobile, or order id"
+                  }
                   className={s.searchInput}
                 />
               </label>
@@ -265,7 +346,10 @@ function AdminOrdersView({
                 <Filter className={s.filterIcon} />
                 <select
                   value={filterStatus}
-                  onChange={(event) => setFilterStatus(event.target.value)}
+                  onChange={(event) => {
+                    setFilterStatus(event.target.value);
+                    setPage(1);
+                  }}
                   className={s.filterSelect}
                 >
                   {statusOptions.map((status) => (
@@ -288,9 +372,35 @@ function AdminOrdersView({
             onStatusChange={requestOrderStatusChange}
           />
 
+          {isPaged && totalPages > 1 && (
+            <div className="flex items-center justify-between gap-3 px-4 py-4 text-sm">
+              <span>
+                Page {page} of {totalPages} · {totalOrders} orders
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page === 1 || ordersLoading}
+                  className="rounded-lg border border-white/15 px-3 py-1.5 disabled:opacity-40"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages || ordersLoading}
+                  className="rounded-lg border border-white/15 px-3 py-1.5 disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+
           {showAllButton && (
             <div className={s.showAllWrapper}>
-              <Link to="/orders" className={s.showAllLink}>
+              <Link href="/orders" className={s.showAllLink}>
                 Show All Orders
               </Link>
             </div>
@@ -313,6 +423,6 @@ function AdminOrdersView({
       />
     </main>
   );
-}
+};
 
-export default AdminOrdersView;
+export default page;

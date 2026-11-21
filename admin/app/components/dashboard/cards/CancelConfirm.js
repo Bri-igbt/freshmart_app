@@ -1,5 +1,5 @@
 import { Loader2, X, XCircle } from "lucide-react";
-import { formatShortOrderId } from "@/app/utils/OrderIds.js";
+import { formatShortOrderId } from "@/app/utils/orderIds.js";
 import { cancelConfirmStyles as s } from "@/app/assets/dummyStyles.js";
 
 const CancelConfirm = ({ order, onClose, onConfirm, isLoading = false }) => {
