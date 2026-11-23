@@ -31,10 +31,10 @@ API.interceptors.response.use(
   }
 );
 
-// Dashboard
+// DASHBOARD
 export const getDashboard = () => API.get("/admin");
 
-// Orders
+// ORDERS
 export const getAllOrders = (params) => API.get("/admin/orders", { params });
 
 export const getSingleOrder = (id) => API.get(`/admin/orders/${id}`);
@@ -46,7 +46,7 @@ export const updateOrderStatus = (id, status) =>
 
 export const deleteOrder = (id) => API.delete(`/admin/orders/${id}`);
 
-// Category
+// CATEGORY
 export const getCategories = () => API.get("/categories");
 
 export const getCategory = (id) => API.get(`/categories/${id}`);
@@ -68,7 +68,7 @@ export const updateProducts = (id, data) => API.put(`/products/${id}`, data);
 
 export const deleteProducts = (id) => API.delete(`/products/${id}`);
 
-// Hookahs
+// HOOKAHS
 export const getHookahs = () => API.get("/hookahs");
 
 export const getHookah = (id) => API.get(`/hookahs/${id}`);
