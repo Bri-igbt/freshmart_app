@@ -1,11 +1,11 @@
-import C1 from "@/app/assets/C1" 
-import TL1 from "@/app/assets/TL1"; 
-import TR1 from "@/app/assets/TR1"; 
-import LM1 from "@/app/assets/LM1"; 
-import RM1 from "@/app/assets/RM1"; 
-import BL1 from "@/app/assets/BL1"; 
-import BR1 from "@/app/assets/BR1"; 
-import Image from "next/image.js";
+import C1 from "@/app/assets/C1.png" 
+import TL1 from "@/app/assets/TL1.png"; 
+import TR1 from "@/app/assets/TR1.png"; 
+import LM1 from "@/app/assets/LM1.png"; 
+import RM1 from "@/app/assets/RM1.png"; 
+import BL1 from "@/app/assets/BL1.png"; 
+import BR1 from "@/app/assets/BR1.png"; 
+import Image from "next/image";
 
 export const bannerData = {
   badge: "Freshness Delivered Daily",

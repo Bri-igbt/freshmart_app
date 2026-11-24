@@ -24,8 +24,8 @@ const addressSchema = new mongoose.Schema(
     },
     pinCode: {
       type: String,
-      required: true,
       trim: true,
+      match: [/^\d{6}$/, "Postal code must be 6 digits"],
     },
     city: {
       type: String,
