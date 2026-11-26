@@ -20,13 +20,10 @@ const isVercel = Boolean(process.env.VERCEL);
 const app = express();
 
 if (isProduction) app.set("trust proxy", 1);
-
-// CLIENT_URL and ADMIN_URL can each hold several URLs separated by commas
 const splitUrls = (value) => (value ? value.split(",") : []);
 
 const allowedOrigins = [
   ...(isProduction ? [] : ["http://localhost:3000", "http://localhost:3001"]),
-  // Set ALLOW_LOCALHOST=true on Vercel while testing; remove it once live
   ...(process.env.ALLOW_LOCALHOST === "true"
     ? ["http://localhost:3000", "http://localhost:3001"]
     : []),
@@ -52,7 +49,6 @@ app.use(
 );
 app.use(express.json());
 
-// Serverless: connect to MongoDB once and reuse the connection
 let dbPromise = null;
 app.use(async (req, res, next) => {
   try {
@@ -66,7 +62,7 @@ app.use(async (req, res, next) => {
   }
 });
 
-// ROUTES (more specific path first)
+// ROUTES 
 app.use("/api/admin/orders", adminOrderRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/users", userRouter);
@@ -102,7 +98,6 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Locally: start a normal server. On Vercel: just export the app.
 if (!isVercel) {
   connectDB().then(() => {
     app.listen(PORT, () => {
