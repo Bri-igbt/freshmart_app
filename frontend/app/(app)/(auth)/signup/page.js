@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { registerUser } from "@/app/api/api.js";
-import { signupPageStyles as s } from "@/app/assets/dummyStyles.js;"
+import { signupPageStyles as s } from "@/app/assets/dummyStyles.js";
 import freshmartLogo from "@/app/assets/freshmart-logo.svg";
 import {
   ArrowRight,
@@ -78,15 +78,8 @@ const page = () => {
         return showError("Can't reach the server. Check your connection.");
       }
 
-      const message =
-        error.response.data?.message || "Signup failed. Please try again";
-      const isDuplicate =
-        error.response.status === 400 && /exist|already/i.test(message);
-
       showError(
-        isDuplicate
-          ? "An account with this email or phone number already exists. Log in, or verify your email if you haven't yet."
-          : message
+        error.response.data?.message || "Signup failed. Please try again"
       );
     }
   };

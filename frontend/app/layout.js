@@ -16,6 +16,9 @@ export const metadata = {
   title: "FreshMart",
   description:
     "Fresh groceries and everyday essentials, delivered to your door.",
+  icons: {
+    icon: "/freshmart.svg?v=2",
+  },
 };
 
 export default function RootLayout({ children }) {

@@ -91,13 +91,25 @@ export const registerUser = handle(async (req, res) => {
   const email = normalizeEmail(rawEmail);
   const phone = normalizePhone(rawPhone);
 
-  const existingUser = await User.findOne({
-    $or: [{ email }, { phone }],
-  });
-  if (existingUser) {
+  const matches = await User.find({ $or: [{ email }, { phone }] }).select(
+    "+verifyOtpExpire"
+  );
+  const emailUser = matches.find((u) => u.email === email);
+  const phoneUser = matches.find((u) => u.phone === phone);
+
+  // Phone belongs to a different account
+  if (phoneUser && (!emailUser || !phoneUser._id.equals(emailUser._id))) {
     return res.status(400).json({
       success: false,
-      message: "User already exists",
+      message: "This phone number is already used by another account",
+    });
+  }
+
+  // Email belongs to a verified account
+  if (emailUser && emailUser.isVerified) {
+    return res.status(400).json({
+      success: false,
+      message: "An account with this email already exists. Please log in.",
     });
   }
 
@@ -105,6 +117,33 @@ export const registerUser = handle(async (req, res) => {
   const otp = generateOTP();
   const hashedOtp = await bcrypt.hash(otp, 10);
 
+  // Email belongs to an unverified account: refresh it and resend the OTP
+  if (emailUser) {
+    if (onCooldown(emailUser.verifyOtpExpire)) {
+      return res.status(200).json({
+        success: true,
+        message: "A verification code was just sent. Check your email.",
+        email: emailUser.email,
+      });
+    }
+
+    emailUser.name = name;
+    emailUser.phone = phone;
+    emailUser.password = hashedPassword;
+    emailUser.verifyOtp = hashedOtp;
+    emailUser.verifyOtpExpire = new Date(Date.now() + OTP_EXPIRY_MS);
+    emailUser.verifyOtpAttempts = 0;
+    await emailUser.save();
+
+    await sendVerificationOTP(emailUser.email, emailUser.name, otp);
+    return res.status(200).json({
+      success: true,
+      message: "Verification OTP sent successfully",
+      email: emailUser.email,
+    });
+  }
+
+  // Brand new user
   const user = await User.create({
     name,
     email,

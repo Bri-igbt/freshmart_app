@@ -5,7 +5,18 @@ import Address from "../models/Address.js";
 import buildOrderProducts from "../utils/buildOrderProducts.js";
 import handle from "../utils/handle.js";
 
-const CART_CHUNK_SIZE = 450;
+const CART_CHUNK_SIZE = 450; 
+
+const getClientUrl = () => {
+  const url = (process.env.CLIENT_URL || "").trim().replace(/\/+$/, "");
+
+  if (!/^https?:\/\//.test(url)) {
+    throw new Error(
+      "CLIENT_URL is missing or invalid. Set it in the backend .env, e.g. CLIENT_URL=http://localhost:3000"
+    );
+  }
+  return url;
+};
 
 const packCart = (orderProducts) => {
   const compact = orderProducts
@@ -98,11 +109,10 @@ export const createCheckoutSession = handle(async (req, res) => {
   }
 
   const session = await stripe.checkout.sessions.create({
-    payment_method_types: ["card"],
     line_items: lineItems,
     mode: "payment",
-    success_url: `${process.env.CLIENT_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${process.env.CLIENT_URL}/payment-cancel`,
+    success_url: `${getClientUrl()}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${getClientUrl()}/payment-cancel`,
     metadata: {
       userId: req.user._id.toString(),
       address: address._id.toString(),
