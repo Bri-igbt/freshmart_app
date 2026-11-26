@@ -16,22 +16,25 @@ import adminOrderRouter from "./routes/adminOrderRoutes.js";
 
 const PORT = process.env.PORT || 8000;
 const isProduction = process.env.NODE_ENV === "production";
+const isVercel = Boolean(process.env.VERCEL);
 const app = express();
 
 if (isProduction) app.set("trust proxy", 1);
 
+// CLIENT_URL and ADMIN_URL can each hold several URLs separated by commas
+const splitUrls = (value) => (value ? value.split(",") : []);
+
 const allowedOrigins = [
-  ...(isProduction
-    ? []
-    : [
-        "http://localhost:3000", 
-        "http://localhost:3001", 
-      ]),
-  process.env.ADMIN_URL,
-  process.env.CLIENT_URL, 
+  ...(isProduction ? [] : ["http://localhost:3000", "http://localhost:3001"]),
+  // Set ALLOW_LOCALHOST=true on Vercel while testing; remove it once live
+  ...(process.env.ALLOW_LOCALHOST === "true"
+    ? ["http://localhost:3000", "http://localhost:3001"]
+    : []),
+  ...splitUrls(process.env.ADMIN_URL),
+  ...splitUrls(process.env.CLIENT_URL),
 ]
-  .filter(Boolean)
-  .map((origin) => origin.trim().replace(/\/+$/, ""));
+  .map((origin) => origin.trim().replace(/\/+$/, ""))
+  .filter(Boolean);
 
 const allowedOriginSet = new Set(allowedOrigins);
 
@@ -50,7 +53,23 @@ app.use(
 );
 app.use(express.json());
 
-// ROUTES
+// Serverless: connect to MongoDB once and reuse the connection
+let dbPromise = null;
+app.use(async (req, res, next) => {
+  try {
+    dbPromise = dbPromise || connectDB();
+    await dbPromise;
+    next();
+  } catch (error) {
+    dbPromise = null;
+    console.log(error);
+    res.status(500).json({ success: false, message: "Database unavailable" });
+  }
+});
+
+// ROUTES (more specific path first)
+app.use("/api/admin/orders", adminOrderRouter);
+app.use("/api/admin", adminRouter);
 app.use("/api/users", userRouter);
 app.use("/api/upload", uploadRouter);
 app.use("/api/categories", categoryRouter);
@@ -60,8 +79,6 @@ app.use("/api/cart", cartRouter);
 app.use("/api/address", addressRouter);
 app.use("/api/orders", orderRouter);
 app.use("/api/payment", paymentRouter);
-app.use("/api/admin", adminRouter);
-app.use("/api/admin/orders", adminOrderRouter);
 
 app.get("/", (req, res) => {
   res.send("API WORKING");
@@ -86,9 +103,14 @@ app.use((err, req, res, next) => {
   });
 });
 
-connectDB().then(() => {
-  app.listen(PORT, () => {
-    console.log(`Server Started on http://localhost:${PORT}`);
-    console.log(`Allowed origins: ${allowedOrigins.join(", ")}`);
+// Locally: start a normal server. On Vercel: just export the app.
+if (!isVercel) {
+  connectDB().then(() => {
+    app.listen(PORT, () => {
+      console.log(`Server Started on http://localhost:${PORT}`);
+      console.log(`Allowed origins: ${allowedOrigins.join(", ")}`);
+    });
   });
-});
+}
+
+export default app;

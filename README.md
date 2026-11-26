@@ -432,11 +432,11 @@ NEXT_PUBLIC_API_URL=http://localhost:8000/api
 
 ## Author
 
-**Chima Bright Mbanaso**, frontend-leaning full-stack developer based in Lagos, Nigeria.
+**Chima Bright**, frontend-leaning full-stack developer based in Lagos, Nigeria.
 
-- GitHub: `<your-github-profile>`
-- LinkedIn: `<your-linkedin-profile>`
-- Email: `<your-email>`
+- GitHub: `https://github.com/Bri-igbt`
+- LinkedIn: `https://www.linkedin.com/in/chimambright/`
+- Email: `bright.c.official@gmail.com`
 
 ---
 
