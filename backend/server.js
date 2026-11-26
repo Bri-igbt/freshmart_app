@@ -38,7 +38,6 @@ const allowedOrigins = [
 
 const allowedOriginSet = new Set(allowedOrigins);
 
-// MIDDLEWARE
 app.use(
   cors({
     origin: (origin, callback) => {
